@@ -31,9 +31,16 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Accept Android Licenses
+      - name: Accept Licenses & Install Android SDK 36
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || yes | sdkmanager --licenses 2>/dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || sdkmanager "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || true
+
+      - name: Fix compileSdk for CI runner compatibility
+        run: |
+          sed -i 's/compileSdk { version = release(36) { minorApiLevel = 1 } }/compileSdk = 36/g' app/build.gradle.kts || true
+          echo "android.builder.sdkDownload=true" >> gradle.properties
+          echo "org.gradle.configuration-cache=false" >> gradle.properties
 
       - name: Restore or create debug keystore
         run: |
@@ -49,9 +56,9 @@ jobs:
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x lintVitalRelease -x check --stacktrace
+            ./gradlew :app:assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x lintVitalRelease -x check --stacktrace
           else
-            gradle assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x lintVitalRelease -x check --stacktrace
+            gradle :app:assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x lintVitalRelease -x check --stacktrace
           fi
 
       - name: Upload APK Artifact
