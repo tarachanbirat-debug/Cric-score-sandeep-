@@ -71,8 +71,14 @@
       z-index: 99999;
     }
 
+    .pt-android-safe {
+      padding-top: max(12px, env(safe-area-inset-top, 24px)) !important;
+    }
+    .pb-android-nav {
+      padding-bottom: max(10px, env(safe-area-inset-bottom, 16px)) !important;
+    }
     .pb-mobile-safe {
-      padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 140px) !important;
+      padding-bottom: calc(max(16px, env(safe-area-inset-bottom, 16px)) + 110px) !important;
     }
 
     .btn-touch:active {
@@ -162,7 +168,7 @@
   <div id="appViewportRoot" class="flex-1 flex flex-col w-full max-w-2xl mx-auto">
 
     <!-- Top Navigation Header -->
-    <header class="app-chrome-ui sticky top-0 z-40 bg-[#0d1322]/95 backdrop-blur-md border-b border-gray-800 px-4 py-3">
+    <header class="app-chrome-ui sticky top-0 z-40 bg-[#0d1322]/95 backdrop-blur-md border-b border-gray-800 px-4 pt-android-safe pb-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <button onclick="promptGoHome()" title="Home / Reset" class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-xl shadow-lg shadow-emerald-500/20 font-black text-black btn-touch">
@@ -877,7 +883,7 @@
     </main>
 
     <!-- NATIVE BOTTOM NAVIGATION BAR -->
-    <nav class="app-chrome-ui fixed bottom-0 left-0 right-0 z-40 bg-[#0d1322]/95 backdrop-blur border-t border-gray-800 px-4 py-2">
+    <nav class="app-chrome-ui fixed bottom-0 left-0 right-0 z-40 bg-[#0d1322]/95 backdrop-blur border-t border-gray-800 px-4 pt-2 pb-android-nav">
       <div class="max-w-md mx-auto grid grid-cols-3 gap-2 text-center">
         <button id="navBtnScorer" onclick="switchTab('scorer')" class="flex flex-col items-center justify-center py-1.5 rounded-2xl bg-emerald-600 text-white btn-touch transition">
           <span class="text-base">🏏</span>
@@ -2248,6 +2254,12 @@
 
     function showToast(msg) {
       if (isPrismOverlayMode) return;
+      try {
+        if (window.AndroidBridge && window.AndroidBridge.showNativeToast) {
+          window.AndroidBridge.showNativeToast(msg);
+        }
+      } catch (e) {}
+
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
       toast.className = 'bg-gray-900 border border-emerald-500/80 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 transition-all duration-300 pointer-events-auto';
@@ -2266,11 +2278,24 @@
       if (MATCH_DATA.inn2) {
         text += `${MATCH_DATA.inn2.batTeam.name}: ${MATCH_DATA.inn2.runs}/${MATCH_DATA.inn2.wickets} (${MATCH_DATA.inn2.overs}.${MATCH_DATA.inn2.ballsInOver} ov)\n`;
       }
+      try {
+        if (window.AndroidBridge && window.AndroidBridge.shareMatchLink) {
+          window.AndroidBridge.shareMatchLink(text, window.location.href);
+          return;
+        }
+      } catch(e) {}
       navigator.clipboard.writeText(text).then(() => showToast('स्कोरकार्ड कॉपी हो गया!'));
     }
 
     function playAudioTone(type) {
       if (!audioOn || isPrismOverlayMode) return;
+      try {
+        if (window.AndroidBridge) {
+          if (type === 'four' || type === 'six') window.AndroidBridge.vibrateBoundary();
+          else if (type === 'wicket') window.AndroidBridge.vibrateWicket();
+          else window.AndroidBridge.vibrateBall();
+        }
+      } catch(e) {}
       try {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
