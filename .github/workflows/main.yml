@@ -24,61 +24,44 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      - name: Install Android SDK 36
+      - name: Pre-build setup (Licenses, Keystore, Env)
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || yes | sdkmanager --licenses 2>/dev/null || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || sdkmanager "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || true
+          mkdir -p "$ANDROID_HOME/licenses" || true
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> "$ANDROID_HOME/licenses/android-sdk-license"
+          echo "84831b9409646a2b8e44e454045e772e34042784" >> "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          yes | sdkmanager --licenses 2>/dev/null || true
 
-      - name: Auto-repair build files for CI
-        run: |
-          echo "android.builder.sdkDownload=true" >> gradle.properties
-          echo "org.gradle.configuration-cache=false" >> gradle.properties
-          echo "googleServices.missing.passthrough=true" >> gradle.properties
+          touch .env .env.example
+          touch app/.env app/.env.example
 
-          python3 -c "
-          import re
-          for path in ['app/build.gradle.kts', 'build.gradle.kts']:
-              try:
-                  with open(path, 'r') as f:
-                      txt = f.read()
-                  new_txt = re.sub(r'compileSdk\s*\{[^}]*\}', 'compileSdk = 36', txt, flags=re.DOTALL)
-                  new_txt = re.sub(r'compileSdk\s*=\s*release\([^)]*\)\s*\{[^}]*\}', 'compileSdk = 36', new_txt, flags=re.DOTALL)
-                  with open(path, 'w') as f:
-                      f.write(new_txt)
-              except Exception as e:
-                  pass
-          "
-
-          mkdir -p app
-          if [ ! -f "app/google-services.json" ]; then
-            cat << 'EOF' > app/google-services.json
-          {
-            "project_info": {"project_number": "1234567890", "project_id": "cricket-app"},
-            "client": [{"client_info": {"mobilesdk_app_id": "1:123:android:abc", "android_client_info": {"package_name": "com.aistudio.cricketstudio.vpkxrz"}}, "api_key": [{"current_key": "dummy"}]}],
-            "configuration_version": "1"
-          }
-          EOF
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
           fi
-
           if [ ! -f "debug.keystore" ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
           fi
           cp -f debug.keystore app/debug.keystore 2>/dev/null || true
 
+          echo "android.builder.sdkDownload=true" >> gradle.properties
+          echo "org.gradle.configuration-cache=false" >> gradle.properties
+          echo "googleServices.missing.passthrough=true" >> gradle.properties
+
       - name: Build APK with Gradle
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x check
+            ./gradlew :app:assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x check --stacktrace
           else
-            gradle assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x check
+            gradle :app:assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x check --stacktrace
           fi
 
       - name: Upload APK Artifact
