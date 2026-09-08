@@ -24,72 +24,61 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platforms;android-36 build-tools;36.0.0'
+        uses: android-actions/setup-android@v3
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      - name: Accept Android Licenses
+      - name: Install Android SDK 36
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || yes | sdkmanager --licenses 2>/dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || sdkmanager "platforms;android-36" "build-tools;36.0.0" 2>/dev/null || true
 
-      - name: Configure Gradle Environment
+      - name: Auto-repair build files for CI
         run: |
-          echo "googleServices.missing.passthrough=true" >> gradle.properties
           echo "android.builder.sdkDownload=true" >> gradle.properties
           echo "org.gradle.configuration-cache=false" >> gradle.properties
-          echo "org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8" >> gradle.properties
-          sed -i 's/compileSdk { version = release(36) { minorApiLevel = 1 } }/compileSdk = 36/g' app/build.gradle.kts || true
+          echo "googleServices.missing.passthrough=true" >> gradle.properties
 
-      - name: Create dummy google-services.json if missing
-        run: |
+          python3 -c "
+          import re
+          for path in ['app/build.gradle.kts', 'build.gradle.kts']:
+              try:
+                  with open(path, 'r') as f:
+                      txt = f.read()
+                  new_txt = re.sub(r'compileSdk\s*\{[^}]*\}', 'compileSdk = 36', txt, flags=re.DOTALL)
+                  new_txt = re.sub(r'compileSdk\s*=\s*release\([^)]*\)\s*\{[^}]*\}', 'compileSdk = 36', new_txt, flags=re.DOTALL)
+                  with open(path, 'w') as f:
+                      f.write(new_txt)
+              except Exception as e:
+                  pass
+          "
+
+          mkdir -p app
           if [ ! -f "app/google-services.json" ]; then
-            mkdir -p app
             cat << 'EOF' > app/google-services.json
-            {
-              "project_info": {
-                "project_number": "1234567890",
-                "project_id": "cricket-app"
-              },
-              "client": [
-                {
-                  "client_info": {
-                    "mobilesdk_app_id": "1:1234567890:android:abcdef",
-                    "android_client_info": {
-                      "package_name": "com.aistudio.cricketstudio.vpkxrz"
-                    }
-                  },
-                  "oauth_client": [],
-                  "api_key": [{ "current_key": "dummy_key" }]
-                }
-              ],
-              "configuration_version": "1"
-            }
+          {
+            "project_info": {"project_number": "1234567890", "project_id": "cricket-app"},
+            "client": [{"client_info": {"mobilesdk_app_id": "1:123:android:abc", "android_client_info": {"package_name": "com.aistudio.cricketstudio.vpkxrz"}}, "api_key": [{"current_key": "dummy"}]}],
+            "configuration_version": "1"
+          }
           EOF
           fi
 
-      - name: Restore or create debug keystore
-        run: |
-          if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || base64 -D debug.keystore.base64 > debug.keystore 2>/dev/null || true
-          fi
           if [ ! -f "debug.keystore" ]; then
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
           fi
           cp -f debug.keystore app/debug.keystore 2>/dev/null || true
-          echo "debug.keystore is ready"
 
       - name: Build APK with Gradle
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew :app:assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x lintVitalRelease -x check --stacktrace
+            ./gradlew assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x check
           else
-            gradle :app:assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x lintVitalRelease -x check --stacktrace
+            gradle assembleDebug --no-daemon --no-configuration-cache -x test -x lint -x check
           fi
 
       - name: Upload APK Artifact
